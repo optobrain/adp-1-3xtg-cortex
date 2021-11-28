@@ -1,0 +1,16 @@
+%         subplot(221);  cla;  PlotImage(log10(max(II(1:nz/2,:,:),[],3)),true,[.1 .99],true,[2 1 1]);  xlabel('X');  ylabel('Z');  title('MIP');
+%         subplot(222);  cla;  PlotImage(log10(squeeze(max(II(1:nz/2,:,:),[],2))),true,[.1 .99],true,[2 1 1]);  xlabel('Y');  ylabel('Z');  title('MIP');
+        subplot(4,4,[1 2 5 6]);  cla;  
+            PlotImage(log10(II0(1:nz/2,:,end/2)),true,[.1 .99],true,[2 1 1]);  xlabel('X');  ylabel('Z');  
+            line(1:nx,pp.ax*((1:nx)-nx/2)+pp.izc,'color','r');
+            title(['pp.[izc ax ay] = [' num2str(pp.izc) ' ' num2str(pp.ax,2) ' ' num2str(pp.ay,2) ']']);
+        subplot(4,4,[3 4 7 8]);  cla;  
+            PlotImage(log10(squeeze(II0(1:nz/2,end/2,:))),true,[.1 .99],true,[2 1 1]);  xlabel('Y');  ylabel('Z');  
+            line(1:ny,pp.ay*((1:ny)-ny/2)+pp.izc,'color','r');
+            title('Decorrelation: Center slice');
+        subplot(4,4,9);  cla;  PlotImage(log10(II0(1:nz/2,:,ned)),false,[.1 .99],true,[2 1 1]);  line(1:nx,pp.ax*((1:nx)-nx/2)+pp.ay*(ned-ny/2)+pp.izc,'color','r');  title(['At Y = ' num2str(ned)]);  xlabel('X');  ylabel('Z');
+        subplot(4,4,13);  cla;  PlotImage(log10(II0(1:nz/2,:,end-ned)),false,[.1 .99],true,[2 1 1]);  line(1:nx,pp.ax*((1:nx)-nx/2)+pp.ay*(ny-ned-ny/2)+pp.izc,'color','r');  title(['At Y = ' num2str(ny-ned)]);  xlabel('X');  ylabel('Z');
+        subplot(4,4,10);  cla;  PlotImage(log10(squeeze(II0(1:nz/2,ned,:))),false,[.1 .99],true,[2 1 1]);  line(1:ny,pp.ay*((1:ny)-ny/2)+pp.ax*(ned-nx/2)+pp.izc,'color','r');  title(['At X = ' num2str(ned)]);  xlabel('Y');  ylabel('Z');
+        subplot(4,4,14);  cla;  PlotImage(log10(squeeze(II0(1:nz/2,end-ned,:))),false,[.1 .99],true,[2 1 1]);  line(1:ny,pp.ay*((1:ny)-ny/2)+pp.ax*(nx-ned-nx/2)+pp.izc,'color','r');  title(['At X = ' num2str(nx-ned)]);  xlabel('Y');  ylabel('Z');
+        subplot(4,4,[11 12 15 16]);  cla;  hold on;  
+            PlotImage(log10(squeeze(max(DD,[],1)))',false,[.1 .95],true);  xlabel('X');  ylabel('Y');  title('MIP after removal');
