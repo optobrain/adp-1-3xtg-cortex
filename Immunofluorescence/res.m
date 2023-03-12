@@ -1,0 +1,285 @@
+%% Measure IBA-1 and GFAP immunoactivity
+
+function res(rid, p1suff, p2suff, p3suff)
+% close all;  clc;  clear; 
+comInit;
+
+rid = "acb";
+p1suff = "p1a";
+p2suff = "p2c";
+p3suff = "p3b";
+
+pathrepo = sprintf("%s/res #%s", pathrepo0, rid);
+
+
+%% Load meta data
+
+[tbMeta, nd] = comGetMeta();
+% tbMeta
+
+
+%% load
+
+cp1 = cell(nd,1); 
+cp2 = cell(nd,1);  cr2 = cell(nd,1);  
+cp3 = cell(nd,1);  cr3 = cell(nd,1);
+
+DispProg(0, nd, "Loading app1-app3 results ...");
+for id=1:nd
+    tbMeta1 = tbMeta(id,:);
+
+    % load p1
+    % p1 has maskL and maskR but they are not cropped
+    fpath = sprintf("%s/%s/%s/%s-%s.mat", ...
+        pathdata0, tbMeta1.uid, tbMeta1.eid, tbMeta1.did, p1suff);
+    l = load(fpath);  % p1, img
+    p1 = l.p1;
+    p1.maskL = comCropImg(l.p1.maskL, l.p1.maskL | l.p1.maskR);
+    p1.maskR = comCropImg(l.p1.maskR, l.p1.maskL | l.p1.maskR);
+    cp1{id} = p1;
+
+    % load p2, r2
+    % r2 has cent, rad, met of DAPI cells
+    fpath = sprintf("%s/%s/%s/%s-%s-%s.mat", ...
+        pathdata0, tbMeta1.uid, tbMeta1.eid, tbMeta1.did, p1suff, p2suff);
+    l = load(fpath);  % p2, r2, img, mask
+    cp2{id} = l.p2;
+    cr2{id} = l.r2;  
+    
+    % load p3, r3
+    % r3 has img, bw, cc, lb of immuno image
+    fpath = sprintf("%s/%s/%s/%s-%s-%s.mat", ...
+        pathdata0, tbMeta1.uid, tbMeta1.eid, tbMeta1.did, p1suff, p3suff);
+    l = load(fpath);  % p3, r3
+    cp3{id} = l.p3;
+    cr3{id} = l.r3;
+    
+    DispProg(id, nd);
+end
+disp("ALL LOADED.");
+
+
+%% measure 
+
+tb = tbMeta;
+tb.dapiNcL = zeros(nd,1);  % number of connected components in left ROI
+tb.dapiNcR = zeros(nd,1);  % number of connected components in right ROI
+tb.dapiPxL = zeros(nd,1);  % number of all pixels in left ROI
+tb.dapiPxR = zeros(nd,1);  % number of all pixels in right ROI
+tb.immuNcL = zeros(nd,1);
+tb.immuNcR = zeros(nd,1);
+tb.immuPxL = zeros(nd,1);
+tb.immuPxR = zeros(nd,1);
+
+DispProg(0, nd, "Measuring ...");
+for id=1:nd
+    maskL = cp1{id}.maskL;
+    
+    % dapi
+    cent1 = round(cr2{id}.cent);
+    rad1 = cr2{id}.rad;
+%     bL = maskL(cent1(:,2), cent1(:,1));
+    nc = numel(rad1);
+    bL = false(nc,1);
+    for ic=1:nc
+        bL(ic) = maskL(cent1(ic,2), cent1(ic,1));
+    end
+    tb(id,:).dapiNcL = sum(bL);
+    tb(id,:).dapiNcR = numel(bL) - sum(bL);
+    tb(id,:).dapiPxL = sum(4*pi*rad1(bL).^2);
+    tb(id,:).dapiPxR = sum(4*pi*rad1(~bL).^2);
+    
+    % immu
+    cc1 = cr3{id}.cc;
+    cent = regionprops(cc1, 'Centroid');
+    cent = round(cat(1, cent.Centroid));
+    nc = cc1.NumObjects;
+    bL = false(nc,1);
+    for ic=1:nc
+        bL(ic) = maskL(cent(ic,2), cent(ic,1));
+    end
+    tb(id,:).immuNcL = sum(bL);
+    tb(id,:).immuNcR = nc - sum(bL);
+    tb(id,:).immuPxL = sum(cellfun(@numel, cc1.PixelIdxList(bL)));
+    tb(id,:).immuPxR = sum(cellfun(@numel, cc1.PixelIdxList(~bL)));
+    
+    DispProg(id, nd);
+end
+disp("MEASUREMENT DONE.");
+
+
+%% stat
+
+met = ["immuNc", "immuPx", "ratioNc", "ratioPx"];  nm = numel(met);
+sta = ["iba1", "gfap"];
+
+for qualMin=0:3  % minimum quality to include
+% for qualMin=1:1  % minimum quality to include
+
+    % filter table by quality
+    tb1 = tb(tb.quality >= qualMin,:);
+
+    % make a figure of all metrics and stains
+    fig = NewFig(2.5,nm);  fid = sprintf("#met #qual%d", qualMin);
+    for is=1:2
+        % filter table by stain
+        tb2 = tb1(contains(tb1.eid, sta(is)),:);
+
+        for im=1:nm
+
+            % yl, yr
+            switch met(im)
+                case "immuNc"
+                    yl = tb2.immuNcL;  
+                    yr = tb2.immuNcR;
+                case "immuPx"
+                    yl = tb2.immuPxL;
+                    yr = tb2.immuPxR;
+                case "ratioNc"
+                    yl = tb2.immuNcL ./ tb2.dapiNcL;
+                    yr = tb2.immuNcR ./ tb2.dapiNcR;
+                case "ratioPx"
+                    yl = tb2.immuPxL ./ tb2.dapiPxL;
+                    yr = tb2.immuPxR ./ tb2.dapiPxR;
+                otherwise
+                    error("unsupported met")
+            end
+
+            % remove outliers
+            [~, bOut] = rmoutliers(yl-yr);
+            yl = yl(~bOut);
+            yr = yr(~bOut);
+            tb3 = tb2(~bOut,:);
+
+            % plot 
+            % no swarmchart, because it is paired
+            subplot(2, nm, (is-1)*nm+im);
+            y = [yl; yr];
+            x = [ones(size(yl)); 2*ones(size(yr))];
+    %         swarmchart(x, y, [], [1 1 1]*0.7, '.');
+    %         PlotStatBox(y, x, [], [], 'k');
+            clr = lines;
+            for ir=1:numel(yl)
+    %             line([1 2], [yl(ir) yr(ir)], Marker='.', Color=[1 1 1]/2);
+                if contains(tb3(ir,:).animal, "WT")
+                    clr1 = clr(1,:);
+                    clr1 = 'k';
+                else
+                    clr1 = clr(2,:);
+                    clr1 = 'k';
+                end
+                line([1 2], [yl(ir) yr(ir)], Marker='.', Color=clr1);
+            end
+            ax = gca;
+            ax.XLim = [0.5 2.5];
+            ax.YLim = [0 1]*ax.YLim(2);
+            ax.XTick = [1 2];
+%             ax.XTickLabel = ["Left", "Right"];
+            ax.XTickLabel = ["Ipsi", "Contra"];  % left of the image = right hemisphere = the side of window installation
+            if im == 1
+                ax.YLabel.String = sta(is);
+            end
+            if is == 1
+                ax.Title.String = met(im);
+            end
+
+            % sample size
+            xl = strings(3,1);
+            bWT = contains(tb3.animal, "WT");
+            xl(1) = sprintf("%d/%d WT, %d/%d AD", ...
+                sum(bWT), numel(unique(tb3(bWT,:).animal)), sum(~bWT), numel(unique(tb3(~bWT,:).animal)));
+
+            % stat
+            % we need LME because the data are correlated (clustered)
+            % No, we have only 1 or 2 WT animals, so the intercept of LME is solely
+            % determined by this small number of WT animals, which is not good. Our focus
+            % is not to compare Ipsi and Contra in WT.
+            xlc = 'k';
+            %
+            if IsNormDist(yl-yr)
+                [~, p] = ttest(yl, yr);
+                xl(2) = sprintf("p=%.3f", p);
+                if p < 0.05
+                    xlc = 'r';
+                end
+            else
+                ci = bootci(2000, @mean, yl-yr);
+                xl(2) = sprintf("CI= %.1f to %.1f", ci(1), ci(2));
+                if prod(ci) > 0
+                    xl(2) = sprintf("%s*", xl(2));
+                    xlc = 'r';
+                end
+            end
+            %
+            
+            % stat for both difference=zero? (intercept) and AD effect
+            % No, stat for AD effect 
+            tb3.y = yl - yr;
+            bGrp = sum(bWT) > 0 && sum(~bWT) > 0;  % has both groups?
+            if bGrp
+                tb3.AD = contains(tb3.animal, "AD");
+                md = "y ~ AD + (1|animal)";
+            else
+                md = "y ~ 1 + (1|animal)";
+            end
+            lme = fitlme(tb3, md);
+            if IsNormDist(lme.residuals)
+                pDiff = lme.Coefficients.pValue(1);
+%                 xl(2) = sprintf("pDiff=%.3f", pDiff);
+%                 if pDiff < 0.05,  xl(2) = sprintf("%s*", xl(2));  xlc = 'r';  end
+                if bGrp
+                    pAD = lme.Coefficients.pValue(2);
+                    xl(3) = sprintf("pAD=%.3f", pAD);
+                    if pAD < 0.05,  xl(3) = sprintf("%s*", xl(3));  end
+                end
+            elseif sum(bWT) > 1 && sum(~bWT) > 1  % bootstrp doesn't work when observation is only 1 in any group
+                % bootstrap AD effect by resampling observations within each group
+                nBoot = 2000;  % for p value resolution of 0.001
+                if bGrp
+                    varNames = ["y", "AD", "animal"];  % y, group, cluster
+                else
+                    tb3.grp = ones(size(tb3,1),1);
+                    varNames = ["y", "grp", "animal"];
+                end
+                [blme, ~, fig1] = BootLME(nBoot, tb3, md, varNames, ...  % required inputs
+                    oResamp="obsGrp", bFig=true);  % options for bootstrap
+                figure(fig1.Number);  fid1 = sprintf("#boot #qual%d #%s #%s", qualMin, sta(is), met(im));
+                sgtitle(sprintf("%s %s", rid, fid1));
+                SaveFig(fig1, true, fid1, sprintf("%s %s", pathrepo, fid1));
+                figure(fig.Number);
+                if prod(blme.ci(1,:)) > 0
+%                     xl(2) = "pDiff<0.05*";
+%                     xlc = 'r';
+                else
+%                     xl(2) = "pDiff>0.05";
+                end
+                if bGrp
+                    if prod(blme.ci(2,:)) > 0
+                        xl(3) = "pAD<0.05*";
+                    else
+                        xl(3) = "pAD>0.05";
+                    end
+                end
+            else
+%                 error("LME residuals are not normally distributed, but we cannot do bootstrap as a group has only one observation.");
+%                 pDiff = lme.Coefficients.pValue(1);
+%                 xl(2) = sprintf("pDiff(not-norm)=%.3f", pDiff);
+%                 if pDiff < 0.05,  xl(2) = sprintf("%s*", xl(2));  end
+                if bGrp
+                    pAD = lme.Coefficients.pValue(2);
+                    xl(3) = sprintf("pAD(not-norm)=%.3f", pAD);
+                    if pAD < 0.05,  xl(3) = sprintf("%s*", xl(3));  end
+                end
+            end
+            
+            ax.XLabel.String = xl;
+            ax.XLabel.Color = xlc;
+
+        end
+    end    
+    sgtitle(sprintf("%s %s", rid, fid));
+    SaveFig(fig, true, fid, sprintf("%s %s", pathrepo, fid));
+end  % qualMin
+
+
+

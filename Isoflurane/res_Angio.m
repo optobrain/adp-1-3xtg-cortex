@@ -1,0 +1,208 @@
+%% Measure Isoflurane effects: Angio
+
+close all;  clc;  clear; 
+comInit;
+
+rid = "Angio";  % dtype
+status = ["Awake", "Anesth"];  % cp1{1} and cp1{2}
+
+pathrepo = sprintf("%s/%s", pathrepo0, rid);
+
+
+%% Load meta
+
+tbMeta = comGetMeta();
+tbMeta = tbMeta(tbMeta.dtype == rid,:)
+nd = size(tbMeta,1);
+
+
+%% Load data to tb
+
+tb = table;
+
+% cp2 = cell(nd,1);  cD3 = cell(nd,1);
+for id=1:nd
+    tbMeta1 = tbMeta(id,:);
+    if tbMeta1.eid == ""
+        fpath = sprintf("%s/%s.mat", pathraw0, tbMeta1.did);
+    else
+        fpath = sprintf("%s/%s/%s.mat", pathraw0, tbMeta1.eid, tbMeta1.did);
+    end
+    
+    l = load(fpath);  % p2, D3
+    r2 = l.p2.res;  % V, Vd, VR2
+    nv = sum(prod(r2.Vd>0,2));
+    dx1 = l.p2.cp1{1}.conf.Xstep;  % um/pix
+    dx2 = l.p2.cp1{2}.conf.Xstep;
+    
+    tb1 = table;
+    tb1.grp = strings(nv,1);
+    tb1.grp(:) = tbMeta1.grp;
+    tb1.animal = strings(nv,1);
+    tb1.animal(:) = comGetAnimal(tbMeta1.dtype, tbMeta1.did);
+    tb1.Vd1 = r2.Vd(1:nv,1) * dx1;
+    tb1.Vd2 = r2.Vd(1:nv,2) * dx2;
+    tb1.R1 = r2.VR2(1:nv,1);
+    tb1.R2 = r2.VR2(1:nv,2);
+
+    tb = [tb; tb1];
+    
+%     cp2{id} = l.p2;
+%     cD3{id} = l.D3;
+end
+disp("Loaded.");
+
+tb.grp = categorical(tb.grp, ["Young", "Old"]);
+head(tb)
+
+figure; 
+histogram(tb.R1);
+hold on;
+histogram(tb.R2);
+
+
+%% Filter by R
+
+% minR = 0.8;  % did not change conclusion
+minR = 0;  
+
+if minR > 0
+    tb = tb(tb.R1 >= minR & tb.R2 >= minR, :);
+end
+
+
+%% Plot
+
+tb.diff = (tb.Vd2 ./ tb.Vd1 - 1) * 100;  % [%]
+grp = unique(tb.grp);
+
+clr = lines;
+fig = NewFig2(2,2);
+for ig=1:2
+    subplot(2,2,ig);
+    tb1 = tb(tb.grp==grp(ig),:);
+    uani = unique(tb1.animal);
+    for ia=1:numel(uani)
+        tb2 = tb1(tb1.animal==uani(ia),:);
+        for iv=1:size(tb2,1)
+            line([1 2], [tb2.Vd1(iv), tb2.Vd2(iv)], Color=clr(ia,:), Marker='.');
+        end
+    end
+    ax = gca;
+    ax.XLim = [0.5 2.5];
+    ax.YLim = [0 60];
+    ax.XTickLabel = status;
+    ax.YLabel.String = "Vessel diameter (\mum)";
+    ax.Title.String = grp(ig);
+    
+    subplot(2,2,2+ig);
+    histogram(tb1.diff, FaceColor='k');
+    ax = gca;
+    ax.YLim = [0 30];
+    ax.XLabel.String = "Vessel diameter change (%%)";
+    ax.YLabel.String = "Frequency";
+end
+SaveFig(fig, true, "hist", sprintf("%s #hist", pathrepo));
+  
+
+%% Plot: swarm
+
+clr = lines;
+fig = NewFig2(1,2);  
+subplot(121);
+%     swarmchart(tb.grp, tb.diff, [], [1 1 1]*0.7, Marker='.');
+    tb.grpId = zeros(size(tb,1),1);
+    tb.grpId(tb.grp=="Old") = 1;
+    swarmchart(tb.grpId, tb.diff, [], [1 1 1]*0.7, Marker='.');
+    PlotStatBox(tb.diff, tb.grpId, [], [], 'k');
+    ax = gca;
+    ax.XLim = [0 1] + [-1 1]*0.6;
+    ax.YLim = [-50 125];
+%     line(ax.XLim, [0 0], Color='k');
+    ax.XTick = [0 1];
+    ax.XTickLabel = grp;
+    ax.YLabel.String = "Relative change (%)";
+    ax.Title.String = "Pial vessel diameter";
+subplot(122);
+    for ig=1:2
+        tb1 = tb(tb.grp==grp(ig),:);
+        histogram(tb1.diff);
+        hold on;
+    end
+%     legend(grp, Location='northeast');
+    ax = gca;
+    ax.YLabel.String = "Frequency";
+    ax.XLabel.String = "Relative change (%)";
+SaveFig(fig, true, "swarm", sprintf("%s #swarm", pathrepo));
+  
+
+%% Stat: absolute values
+
+no = size(tb,1);
+tb1 = [tb; tb];
+tb1.Vd = zeros(2*no,1);
+tb1.Vd(1:no) = tb.Vd1;
+tb1.Vd(no+(1:no)) = tb.Vd2;
+tb1.anes = false(2*no,1);
+tb1.anes(no+(1:no)) = true;
+
+md = "Vd ~ anes + grp + (1|animal)";  % this does not consider the clustering by vessels.
+
+for is=1:2
+    tb1 = tb;
+    tb1.Vd = tb.(sprintf("Vd%d", is));
+    md = "Vd ~ grp + (1|animal)";
+    fprintf("## %s: \n", status(is));
+    lme = fitlme(tb1, md)
+    IsNormDist(lme.residuals)
+end
+
+
+%% Stat
+
+% tb.diff = tb.Vd2 - tb.Vd1;  % this also made the effect of old significant
+tb.diff = (tb.Vd2 ./ tb.Vd1 - 1) * 100;  % [%]
+
+md = "diff ~ grp + (1|animal)";
+lme = fitlme(tb, md)
+
+% remove outliers. fitlme does not provide Diagnostics property
+[~, bOut] = rmoutliers(lme.residuals);
+ioOut = find(bOut);  % indices of observation of outliers
+NewFig2(2,2);
+line(lme.fitted, lme.residuals, Marker='x', LineStyle='none');
+if sum(bOut) > 0
+    x = lme.fitted;  y = lme.residuals;
+    line(x(bOut), y(bOut), Marker='o', Color='r', LineStyle='none')
+end
+ax = gca;
+ax.YLim = [-1 1]*max(abs(ax.YLim));
+line(ax.XLim, [0 0], Color='k');
+ax.XLabel.String = "fitted";
+ax.YLabel.String = "residuals";
+ax.Title.String = sprintf("%d outliers detected", sum(bOut));
+if sum(bOut) > 0
+    lme1 = fitlme(tb, md, Exclude=ioOut)
+else
+    lme1 = lme;
+end
+
+if IsNormDist(lme.residuals)
+    disp("LME residuals were normally distributed.");
+else
+    % Boot LME
+    nBoot = 2000;  % for p value resolution of 0.001
+    varNames = ["diff", "grp", "animal"];  % y, group, cluster/subject
+
+    % use oResamp=obsGrp as the input variable is not fixed but random recruitment. 
+    [blme, ~, fig] = BootLME(nBoot, tb, md, varNames, ...  % required inputs
+        oResamp='obsGrp', bFig=true);  % options for bootstrap
+    blme
+    blme.b
+    blme.ci
+    SaveFig(fig, true, "boot", sprintf("%s #boot", pathrepo));
+end
+
+
+
+
