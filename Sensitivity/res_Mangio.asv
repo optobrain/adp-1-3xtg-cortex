@@ -1,0 +1,270 @@
+%% Measure Isoflurane effects: Doppler
+
+close all;  clc;  clear; 
+comInit;
+
+rid = "Mangio";  % dtype
+status = ["Awake", "Anesth"];  % cp1{1} and cp1{2}
+
+pathrepo = sprintf("%s/%s", pathrepo0, rid);
+
+
+%% Load meta
+
+tbMeta = comGetMeta();
+tbMeta = tbMeta(tbMeta.dtype == rid,:)
+nd = size(tbMeta,1);
+
+
+%% Load data to tb
+
+tb = table;  
+
+for id=1:nd
+    tbMeta1 = tbMeta(id,:);
+    if tbMeta1.eid == ""
+        fpath = sprintf("%s/%s.mat", pathraw0, tbMeta1.did);
+    else
+        fpath = sprintf("%s/%s/%s.mat", pathraw0, tbMeta1.eid, tbMeta1.did);
+    end
+    
+    l = load(fpath);  % D, btwness, clsness, frac, full_l, tort
+    tb1 = table;
+    tb1.grp = tbMeta1.grp;
+    tb1.animal = comGetAnimal(tbMeta1.dtype, tbMeta1.did, tbMeta1.eid);
+    tb1.anes = contains(tbMeta1.eid, "_anes");
+    tb1.diaMean = mean(l.D);
+    tb1.diaCov = std(l.D)/mean(l.D);
+    tb1.lenMean = mean(l.full_l);
+    tb1.lenCov = std(l.full_l)/mean(l.full_l);
+    tb1.torMean = mean(l.tort);
+    tb1.torCov = std(l.tort)/mean(l.tort);
+    tb1.btwMean = mean(l.btwness);
+    tb1.btwCov = std(l.btwness)/mean(l.btwness);
+    tb1.clsMean = mean(l.clsness);
+    tb1.clsCov = std(l.clsness)/mean(l.clsness);
+    tb1.frc = l.frac;
+
+    tb = [tb; tb1];
+end
+disp("Loaded.");
+
+grp = ["Young", "Old"];
+tb.grp = categorical(tb.grp, grp);
+head(tb)
+
+
+%% Plot
+
+met = ["dia", "len", "tor", "btw", "cls", "frc"];
+mtype = ["Mean", "Cov"];
+nm = numel(met);
+ani = unique(tb.animal);  na = numel(ani);
+
+fig = NewFig2(2,nm);
+for im=1:2
+    for it=1:2  % mean, Cov
+        met1 = sprintf("%s%s", met(im), mtype(it));
+        if ~ismember(met1, tb.Properties.VariableNames)
+            met1 = met(im);
+        end
+        tb1 = table;
+        tb1.animal = ani;
+        tb1.grp = strings(na,1);
+        tb1.diff = zeros(na,1);
+        for ia=1:na
+            tb1.grp(ia) = unique(tb(tb.animal==tb1.animal(ia),:).grp);
+            tb1.diff(ia) = ( tb(tb.animal==tb1.animal(ia) & tb.anes,:).(met1) ./ ...
+                tb(tb.animal==tb1.animal(ia) & ~tb.anes,:).(met1) - 1)*100;
+        end
+        tb1.grp = categorical(tb1.grp, grp);
+        
+        % stat
+        y1 = tb1.diff(tb1.grp==grp(1));  y2 = tb1.diff(tb1.grp==grp(2));
+        if IsNormDist(y1) && IsNormDist(y2)
+            [~, p] = ttest2(y1, y2);
+            xl = sprintf("p=%.3f", p);
+        else
+            nBoot = 2000;
+            nS
+            [p, t, tBoot, effectSize, fig1] = BootCompareTwo(y1, y2, nBoot, nSided, ...
+    effectSizeType, effectSizeAlpha, bFig)
+            [~, p] = ttest2(tb1.diff(tb1.grp==grp(1)), tb1.diff(tb1.grp==grp(2)));
+        error
+        
+        subplot(2,nm,im+(it-1)*nm);
+    end
+end
+%%        
+            
+
+tb.diffVd = (tb.Vd2 ./ tb.Vd1 - 1) * 100;  % [%]
+tb.diffVf = (tb.Vf2 ./ tb.Vf1 - 1) * 100;
+grp = unique(tb.grp);
+
+clr = lines;
+fig = NewFig2(2,2);
+for ig=1:2
+    subplot(2,2,ig);
+    tb1 = tb(tb.grp==grp(ig),:);
+    uani = unique(tb1.animal);
+    for ia=1:numel(uani)
+        tb2 = tb1(tb1.animal==uani(ia),:);
+        for iv=1:size(tb2,1)
+            line([1 2], [tb2.Vd1(iv), tb2.Vd2(iv)], Color=clr(ia,:), Marker='.');
+        end
+    end
+    ax = gca;
+    ax.XLim = [0.5 2.5];
+    ax.YLim = [0 120];
+    ax.XTickLabel = status;
+    ax.YLabel.String = "Pen. ves. diameter (\mum)";
+    ax.Title.String = grp(ig);
+    
+    subplot(2,2,2+ig);
+    histogram(tb1.diffVd, FaceColor='k');
+    ax = gca;
+    ax.YLim = [0 25];
+    ax.XLabel.String = "Pen. ves. diameter change (%%)";
+    ax.YLabel.String = "Frequency";
+end
+SaveFig(fig, true, "dia", sprintf("%s #dia", pathrepo));    
+
+clr = lines;
+fig = NewFig2(2,2);
+for ig=1:2
+    subplot(2,2,ig);
+    tb1 = tb(tb.grp==grp(ig),:);
+    uani = unique(tb1.animal);
+    for ia=1:numel(uani)
+        tb2 = tb1(tb1.animal==uani(ia),:);
+        for iv=1:size(tb2,1)
+            line([1 2], [tb2.Vf1(iv), tb2.Vf2(iv)], Color=clr(ia,:), Marker='.');
+        end
+    end
+    ax = gca;
+    ax.XLim = [0.5 2.5];
+    ax.YLim = [-1 1]*2.5;
+    ax.XTickLabel = status;
+    ax.YLabel.String = "Flow";
+    ax.Title.String = grp(ig);
+    
+    subplot(2,2,2+ig);
+    histogram(tb1.diffVf, FaceColor='k');
+    ax = gca;
+    ax.YLim = [0 12];
+    ax.XLabel.String = "Flow change (%%)";
+    ax.YLabel.String = "Frequency";
+end
+SaveFig(fig, true, "flow", sprintf("%s #flow", pathrepo));
+    
+
+%% Stat: absolute values 
+
+for is=1:2
+    tb1 = tb;
+    tb1.Vd = tb.(sprintf("Vd%d", is));
+    md = "Vd ~ grp + (1|animal)";
+    fprintf("## %s: \n", status(is));
+    lme = fitlme(tb1, md)
+    IsNormDist(lme.residuals)
+end
+
+for is=1:2
+    tb1 = tb;
+    tb1.Vf = tb.(sprintf("Vf%d", is));
+    md = "Vf ~ grp + (1|animal)";
+    fprintf("## %s: \n", status(is));
+    lme = fitlme(tb1, md)
+    IsNormDist(lme.residuals)
+end
+
+
+%% Stat: difference in diameter
+
+md = "diffVd ~ grp + (1|animal)";
+lme = fitlme(tb, md)
+
+% remove outliers. fitlme does not provide Diagnostics property
+[~, bOut] = rmoutliers(lme.residuals);
+ioOut = find(bOut);  % indices of observation of outliers
+NewFig2(2,2);
+line(lme.fitted, lme.residuals, Marker='x', LineStyle='none');
+if sum(bOut) > 0
+    x = lme.fitted;  y = lme.residuals;
+    line(x(bOut), y(bOut), Marker='o', Color='r', LineStyle='none')
+end
+ax = gca;
+ax.YLim = [-1 1]*max(abs(ax.YLim));
+line(ax.XLim, [0 0], Color='k');
+ax.XLabel.String = "fitted";
+ax.YLabel.String = "residuals";
+ax.Title.String = sprintf("%d outliers detected", sum(bOut));
+if sum(bOut) > 0
+    lme1 = fitlme(tb, md, Exclude=ioOut)
+else
+    lme1 = lme;
+end
+
+if IsNormDist(lme.residuals)
+    disp("LME residuals were normally distributed.");
+else
+    % Boot LME
+    nBoot = 2000;  % for p value resolution of 0.001
+    varNames = ["diffVd", "grp", "animal"];  % y, group, cluster/subject
+
+    % use oResamp=obsGrp as the input variable is not fixed but random recruitment. 
+    [blme, ~, fig] = BootLME(nBoot, tb, md, varNames, ...  % required inputs
+        oResamp='obsGrp', bFig=true);  % options for bootstrap
+    blme
+    blme.b
+    blme.ci
+    SaveFig(fig, true, "boot", sprintf("%s #dia #boot", pathrepo));
+end
+
+
+%% Stat: difference in flow
+
+md = "diffVf ~ grp + (1|animal)";
+lme = fitlme(tb, md)
+
+% remove outliers. fitlme does not provide Diagnostics property
+[~, bOut] = rmoutliers(lme.residuals);
+ioOut = find(bOut);  % indices of observation of outliers
+NewFig2(2,2);
+line(lme.fitted, lme.residuals, Marker='x', LineStyle='none');
+if sum(bOut) > 0
+    x = lme.fitted;  y = lme.residuals;
+    line(x(bOut), y(bOut), Marker='o', Color='r', LineStyle='none')
+end
+ax = gca;
+ax.YLim = [-1 1]*max(abs(ax.YLim));
+line(ax.XLim, [0 0], Color='k');
+ax.XLabel.String = "fitted";
+ax.YLabel.String = "residuals";
+ax.Title.String = sprintf("%d outliers detected", sum(bOut));
+if sum(bOut) > 0
+    lme1 = fitlme(tb, md, Exclude=ioOut)
+else
+    lme1 = lme;
+end
+
+if IsNormDist(lme.residuals)
+    disp("LME residuals were normally distributed.");
+else
+    % Boot LME
+    nBoot = 2000;  % for p value resolution of 0.001
+    varNames = ["diffVf", "grp", "animal"];  % y, group, cluster/subject
+
+    % use oResamp=obsGrp as the input variable is not fixed but random recruitment. 
+    [blme, ~, fig] = BootLME(nBoot, tb, md, varNames, ...  % required inputs
+        oResamp='obsGrp', bFig=true);  % options for bootstrap
+    blme
+    blme.b
+    blme.ci
+    SaveFig(fig, true, "boot", sprintf("%s #flow #boot", pathrepo));
+end
+
+
+
+
