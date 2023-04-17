@@ -1,5 +1,8 @@
 # Near-lifespan longitudinal tracking of microvascular morphology, topology, and flow
 
+## Releases
+[![DOI](https://zenodo.org/badge/432599928.svg)](https://zenodo.org/badge/latestdoi/432599928)
+
 ## System requirements
 
 The codes were developed and tested with MATLAB R2019a on Windows Server 2012.
