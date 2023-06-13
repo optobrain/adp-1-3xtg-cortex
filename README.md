@@ -1,4 +1,5 @@
 # Near-lifespan longitudinal tracking of microvascular morphology, topology, and flow
+Walek, K.W., Stefan, S., Lee, JH. et al. Near-lifespan longitudinal tracking of brain microvascular morphology, topology, and flow in male mice. Nat Commun 14, 2982 (2023). https://doi.org/10.1038/s41467-023-38609-z
 
 ## Releases
 [![DOI](https://zenodo.org/badge/432599928.svg)](https://zenodo.org/badge/latestdoi/432599928)
